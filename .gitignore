@@ -3,3 +3,4 @@ bootstrap
 *.zip
 *.csv
 *.iml
+dist/
