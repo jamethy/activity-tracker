@@ -8,7 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/a-h/templ"
-	"github.com/labstack/echo/v4"
+	"github.com/golang-jwt/jwt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -16,7 +16,6 @@ import (
 	"os"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -24,7 +23,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 //go:embed static/*
@@ -226,16 +224,7 @@ func render(c echo.Context, comp templ.Component) error {
 	return nil
 }
 
-//    background-color: "lightgreen";
-//    height: "1em";
-//    width: { fmt.Sprintf("%fem", e.DurationHours()*2) };
-
-// https://github.com/a-h/templ/issues/789
-func effortClass(e DayEntry) templ.CSSClass {
-
-	var attributes []string
-	attributes = append(attributes, "height:1em")
-
+func effortColor(e DayEntry) string {
 	var color string
 	switch {
 	case e.Effort >= 0.8:
@@ -247,21 +236,7 @@ func effortClass(e DayEntry) templ.CSSClass {
 	default:
 		color = "#495E49FF"
 	}
-	attributes = append(attributes, "background-color:"+color)
-
-	maxEmWidth := float32(10) // ?
-	durationInHours := float32(e.Duration) / float32(time.Hour)
-	emWidth := min(maxEmWidth, 4*durationInHours)
-	attributes = append(attributes, fmt.Sprintf("width:%fem", emWidth))
-
-	css := strings.Join(attributes, ";")
-
-	cssID := templ.CSSID(`effort`, css)
-
-	return templ.ComponentCSSClass{
-		ID:    cssID,
-		Class: templ.SafeCSS(`.` + cssID + `{` + css + `}`),
-	}
+	return color
 }
 
 type LocalCSVData struct {

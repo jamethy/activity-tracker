@@ -10,7 +10,7 @@ templ page(body templ.Component) {
 	<html lang="en">
 		<head>
 			<meta charset="UTF-8"/>
-			<title>Title</title>
+			<title>Tracker</title>
 			<script src="https://unpkg.com/htmx.org@2.0.0/dist/htmx.js" integrity="sha384-Xh+GLLi0SMFPwtHQjT72aPG19QvKB8grnyRbYBNIdHWc2NkCrz65jlU7YrzO6qRp" crossorigin="anonymous"></script>
 			<link rel="stylesheet" href="/styles.css"/>
 		</head>
@@ -30,8 +30,15 @@ templ mainContent(content templ.Component) {
 	</main>
 }
 
+// ran into issues with v0.2.334, but not in v0.2.731
+css effortClass(e DayEntry) {
+    height: 1em;
+    background-color: { effortColor(e) };
+	width: { fmt.Sprintf("%fem", min(10.0, 4.0 * float32(e.Duration) / float32(time.Hour)))  };
+}
+
 templ entryDisplay(e DayEntry) {
-    <div>{ e.Description }</div>
+    <div class={ loading(50) }>{ e.Description }</div>
     <div class={ effortClass(e) }></div>
 }
 
@@ -39,11 +46,6 @@ func entryModalCreationVals(d DayLog) string {
     return fmt.Sprintf(`{"date": "%s"}`, d.Date.Format(time.DateOnly))
 }
 
-//css effort(e DayEntry) {
-//    background-color: "lightgreen";
-//    height: "1em";
-//    width: { fmt.Sprintf("%fem", e.DurationHours()*2) };
-//}
 templ tracker(logs []DayLog) {
 	<section>
 		<h1>Exercise Tracker</h1>
