@@ -8,7 +8,7 @@ git tag $VERSION
 
 export AWS_PROFILE=personal
 
-CGO_ENABLED=0 go build -o bootstrap -ldflags "-X version=$VERSION" .
+CGO_ENABLED=0 go build -o bootstrap -ldflags "-X main.version=$VERSION" .
 zip -r daily-tracker-lambda-$VERSION.zip bootstrap
 aws s3 cp daily-tracker-lambda-$VERSION.zip s3://$BUCKET/$KEY
 

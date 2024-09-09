@@ -15,6 +15,12 @@ type MyProxy struct {
 }
 
 func (m *MyProxy) Flush() {
+	slog.Info("in flush")
+}
+
+func (m *MyProxy) FlushError() error {
+	slog.Info("in flush error")
+	return nil
 }
 
 // LambdaEchoProxy is a modified copy of aws-lambda-go-api-proxy that lets me grab the request ID
@@ -35,7 +41,7 @@ func LambdaEchoProxy(e *echo.Echo) func(ctx context.Context, req events.APIGatew
 		// add in request id header
 		httpReq.Header.Add(echo.HeaderXRequestID, req.RequestContext.RequestID)
 
-		respWriter := MyProxy{core.NewProxyResponseWriterV2()}
+		respWriter := &MyProxy{core.NewProxyResponseWriterV2()}
 		adapter.Echo.ServeHTTP(http.ResponseWriter(respWriter), httpReq)
 
 		proxyResponse, err := respWriter.GetProxyResponse()
