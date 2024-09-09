@@ -88,16 +88,16 @@ templ addLogModal(date string) {
                     <input type="date" id="date" value={ date } name="date"/>
                 </div>
                 <div class="form-item">
+                    <label for="description">Description:</label>
+                    <input type="text" id="description" name="description" style="width:8.55em"/>
+                </div>
+                <div class="form-item">
                     <label for="duration">Duration:</label>
                     <input type="text" id="duration" name="duration" style="width:8.55em"/>
                 </div>
                 <div class="form-item">
                     <label for="effort">Effort:</label>
                     <input type="range" id="effort" name="effort" min="0" max="1.0" step="0.05"  style="width:9em"/>
-                </div>
-                <div class="form-item">
-                    <label for="description">Description:</label>
-                    <input type="text" id="description" name="description" style="width:8.55em"/>
                 </div>
                 <div class="form-item">
                     <button onClick={ closeModal() }>Cancel</button>

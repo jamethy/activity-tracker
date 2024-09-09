@@ -55,6 +55,10 @@ main {
     animation-timing-function: ease;
 }
 
+#modal h1 {
+    text-align: center;
+}
+
 .form-item {
     display: flex;
     margin-bottom: 1em;
