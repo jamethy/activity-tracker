@@ -4,6 +4,8 @@ VERSION=$1
 BUCKET=jamesianburns-random-data
 KEY=daily-tracker/daily-tracker-lambda-$VERSION.zip
 
+git tag $VERSION
+
 export AWS_PROFILE=personal
 
 CGO_ENABLED=0 go build -o bootstrap .
