@@ -3,6 +3,7 @@ package main
 import (
     "time"
     "fmt"
+    "strings"
 )
 
 templ page(body templ.Component) {
@@ -25,9 +26,12 @@ templ strComp(str string) {
 	<span>{ str }</span>
 }
 
-templ mainContent(content templ.Component) {
+templ mainContent(content... templ.Component) {
 	<main>
-		@content
+		<h1>Exercise Tracker</h1>
+		for _, c := range content {
+            @c
+		}
 	</main>
 }
 
@@ -40,16 +44,52 @@ css effortClass(e DayEntry) {
 
 templ entryDisplay(e DayEntry) {
     <div>{ e.Description }</div>
-    <div class={ effortClass(e) }></div>
+    <div class={ effortClass(e) } title={ e.Duration.String() }></div>
 }
 
 func entryModalCreationVals(d DayLog) string {
     return fmt.Sprintf(`{"date": "%s"}`, d.Date.Format(time.DateOnly))
 }
 
-templ tracker(logs []DayLog) {
+func scoreStr(s float64) string {
+    return fmt.Sprintf("%.0f%%", s)
+}
+
+func sumStr(s time.Duration) string {
+	str := s.String()
+	if strings.HasSuffix(str, "m0s") {
+		str = str[:len(str)-2]
+	}
+	if strings.HasSuffix(str, "h0m") {
+		str = str[:len(str)-2]
+	}
+	return str
+}
+
+func heartRate(f float64) string {
+    return fmt.Sprintf("%.0f BPM", f)
+}
+
+templ summarySection(s Summary) {
+	<section class="summary">
+	    <span class="combo-score">{ scoreStr(s.ComboScore) }<div>of<br/>goal</div></span>
+	    <span class="combo-score" title={ sumStr(s.RemainingModerateTime/2) + " high remaining" }>{ sumStr(s.RemainingModerateTime) }<div>moderate<br/>remaining</div></span>
+	    <div class="score-breakdown">
+	        <div>
+	            { scoreStr(s.LowIntensityScore) } / { sumStr(s.LowIntensitySum) } Low Intensity
+	        </div>
+	        <div title={ "> " + heartRate(s.ModerateIntensityHeartRate) }>
+	            { scoreStr(s.ModerateIntensityScore) } / { sumStr(s.ModerateIntensitySum) } Moderate Intensity
+	        </div>
+	        <div title={ "> " + heartRate(s.HighIntensityHeartRate) }>
+	            { scoreStr(s.HighIntensityScore) } / { sumStr(s.HighIntensitySum) } High Intensity
+	        </div>
+	    </div>
+	</section>
+}
+
+templ tracker(logs []DayLog, summary Summary) {
 	<section>
-		<h1>Exercise Tracker</h1>
 		<div class="tracker-container">
 			for _, d := range logs {
 				<div id={ dateToID(d.Date.Format(time.DateOnly)) } class="day">

@@ -2,6 +2,8 @@
 body {
     background-color: #1f2022;
     color: #c1c0c0;
+    letter-spacing: 0.075em;
+    font-family: monospace;
 }
 
 main {
@@ -168,6 +170,31 @@ main {
     }
 }
 
+
+.summary {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+.combo-score {
+    font-size: 4em;
+}
+.combo-score > div {
+    font-size: 0.4em;
+    display: inline-block;
+    text-align: left;
+    padding-left: 0.5em;
+    padding-right: 1em;
+    line-height: 1em;
+}
+
+.score-breakdown {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-left: 0.5em;
+}
+
 @media (width <= 50em) {
     main {
         padding: 0;
@@ -179,5 +206,10 @@ main {
 
     #modal {
         font-size: 1.5em;
+    }
+
+    .summary {
+        gap: 0;
+        padding-bottom: 0.5em;
     }
 }

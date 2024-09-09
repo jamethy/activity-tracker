@@ -13,10 +13,12 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -33,6 +35,31 @@ var staticFiles embed.FS
 // zip -r daily-tracker-lambda-v1.0.1.zip bootstrap
 // aws --profile=personal s3 cp daily-tracker-lambda-v1.0.1.zip s3://jamesianburns-random-data/daily-tracker/daily-tracker-lambda-v1.0.1.zip
 
+// todo add click to delete modal
+// todo add light, moderate, and vigorous totals for past seven days
+// todo add effort level color codes
+// todo add multiple users
+// todo factor in heart rates and targets for a week (1.25-2.5h a week)
+// my maximum heart rate: 206.9 – (0.67 x age) = 184BPM
+// my resting heart rate: 60ish
+// https://www.heart.org/en/healthy-living/fitness/fitness-basics/aha-recs-for-physical-activity-in-adults
+// - says get
+// 		- at least 2.5h/w of moderate-intensity aerobic activity (50-70% of maximum heart rate, 93-130BPM)
+//	 	- or 1.25h/w of vigorous aerobic activity (70-85% of maximum, 130-158)
+// - even light anything is better than sitting
+// - extra benefits after 5h
+
+type UserInfo struct {
+	Username         string
+	Password         string
+	RestingHeartrate float64
+	DateOfBirth      time.Time
+}
+
+const moderateFloorPercentage = 0.5
+const highFloorPercentage = 0.7
+const minimumModerateIntensityHoursPerWeek = 2.5
+
 // https://changelog.com/gotime/291
 // https://templ.guide/
 // https://github.com/a-h/templ
@@ -47,6 +74,13 @@ func main() {
 		"localFile", *useLocalFile,
 		"runLocally", *runLocally,
 	)
+
+	user := UserInfo{
+		Username:         os.Getenv("USERNAME"),
+		Password:         os.Getenv("PASSWORD"),
+		RestingHeartrate: 60,
+		DateOfBirth:      time.Date(1989, 12, 18, 0, 0, 0, 0, time.UTC),
+	}
 
 	getFileHandler := func(ctx context.Context) (io.ReadWriteCloser, error) {
 		if *useLocalFile {
@@ -92,8 +126,9 @@ func main() {
 		}
 
 		days = fillInDates(days, time.Now())
+		summary := calcSummary(user, days[:7])
 
-		return render(c, page(mainContent(tracker(days))))
+		return render(c, page(mainContent(summarySection(summary), tracker(days, summary))))
 	})
 
 	e.POST("/entries", func(c echo.Context) error {
@@ -163,7 +198,7 @@ func main() {
 		if err := c.Bind(&params); err != nil {
 			return err
 		}
-		if params.Username != os.Getenv("USERNAME") || params.Password != os.Getenv("PASSWORD") {
+		if params.Username != user.Username || params.Password != user.Password {
 			return c.NoContent(http.StatusUnauthorized)
 		}
 		// https://echo.labstack.com/docs/cookies
@@ -205,6 +240,66 @@ func main() {
 
 }
 
+type Summary struct {
+	RestingHeartRate           float64
+	LowIntensitySum            time.Duration // better than nothing - worth fraction of moderate
+	LowIntensityScore          float64
+	ModerateIntensityHeartRate float64       // 50-70% of maximum heart rate, 93-130BPM
+	ModerateIntensitySum       time.Duration // at least 2.5h/w
+	ModerateIntensityScore     float64
+	HighIntensityHeartRate     float64       // 70-85% of maximum, 130-158
+	HighIntensitySum           time.Duration // at least 1.25h/w
+	HighIntensityScore         float64
+	ComboScore                 float64 // high intensity is about double time, 100 is goal
+	RemainingModerateTime      time.Duration
+	BonusLevel                 float64 // 5h equiv, 200%
+}
+
+func calcSummary(user UserInfo, days []DayLog) Summary {
+	// https://www.heart.org/en/healthy-living/fitness/fitness-basics/aha-recs-for-physical-activity-in-adults
+	age := time.Now().Sub(user.DateOfBirth).Hours() / (24 * 365)
+	maximumHeartRate := 206.09 - 0.67*age
+
+	s := Summary{
+		RestingHeartRate:           user.RestingHeartrate,
+		ModerateIntensityHeartRate: maximumHeartRate * moderateFloorPercentage,
+		HighIntensityHeartRate:     maximumHeartRate * highFloorPercentage,
+	}
+
+	for _, d := range days {
+		for _, e := range d.Entries {
+			if e.Effort >= highFloorPercentage {
+				s.HighIntensitySum += e.Duration
+			} else if e.Effort >= moderateFloorPercentage {
+				s.ModerateIntensitySum += e.Duration
+			} else {
+				s.LowIntensitySum += e.Duration
+			}
+		}
+	}
+
+	desiredModerateIntensityHours := minimumModerateIntensityHoursPerWeek * float64(len(days)/7.0)
+
+	// calculate pseudo-hours
+	s.LowIntensityScore = 0.2 * float64(s.LowIntensitySum.Hours())
+	s.ModerateIntensityScore = 1.0 * float64(s.ModerateIntensitySum.Hours())
+	s.HighIntensityScore = 2.0 * float64(s.HighIntensitySum.Hours())
+
+	// calc remaining hours
+	remainingMinutes := 60 * (desiredModerateIntensityHours - (s.LowIntensityScore + s.ModerateIntensityScore + s.HighIntensityScore))
+	s.RemainingModerateTime = time.Duration(float64(time.Minute) * max(0, math.Floor(remainingMinutes)))
+
+	// convert to score
+	s.LowIntensityScore *= 100 / desiredModerateIntensityHours
+	s.ModerateIntensityScore *= 100 / desiredModerateIntensityHours
+	s.HighIntensityScore *= 100 / desiredModerateIntensityHours
+
+	s.ComboScore = s.LowIntensityScore + s.ModerateIntensityScore + s.HighIntensityScore
+	s.BonusLevel = 200
+
+	return s
+}
+
 type (
 	DayLog struct {
 		Date    time.Time
@@ -230,14 +325,14 @@ func render(c echo.Context, comp templ.Component) error {
 func effortColor(e DayEntry) string {
 	var color string
 	switch {
-	case e.Effort >= 0.8:
+	case e.Effort >= highFloorPercentage:
 		color = "#009700FF"
-	case e.Effort >= 0.5:
-		color = "#137813FF"
-	case e.Effort >= 0.25:
-		color = "#52864DFF"
+	case e.Effort >= moderateFloorPercentage:
+		color = "#296029"
+	case e.Effort >= 0.2:
+		color = "#3f4f3f"
 	default:
-		color = "#495E49FF"
+		color = "#595e59"
 	}
 	return color
 }
@@ -526,4 +621,15 @@ func parseJWT(tokenString string) (*jwt.MapClaims, error) {
 	}
 
 	return nil, fmt.Errorf("invalid token")
+}
+
+func testing(s time.Duration) string {
+	str := s.String()
+	if strings.HasSuffix(str, "0s") {
+		str = str[:len(str)-2]
+	}
+	if strings.HasSuffix(str, "0m") {
+		str = str[:len(str)-2]
+	}
+	return str
 }
