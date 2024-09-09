@@ -74,6 +74,7 @@ func main() {
 					return next(c)
 				}
 			}
+			slog.Info("301 for user", "err", err.Error())
 			return c.Redirect(http.StatusFound, "/login")
 		}
 	})
@@ -166,13 +167,14 @@ func main() {
 			return c.NoContent(http.StatusUnauthorized)
 		}
 		// https://echo.labstack.com/docs/cookies
-		value, err := issueJWT(params.Username)
+		value, exp, err := issueJWT(params.Username)
 		if err != nil {
 			return err
 		}
 		c.SetCookie(&http.Cookie{
-			Name:  "session",
-			Value: value,
+			Name:    "session",
+			Value:   value,
+			Expires: exp,
 		})
 		return c.Redirect(http.StatusFound, "/")
 	})
@@ -487,10 +489,12 @@ func safeClose(c io.Closer, name string) {
 	}
 }
 
-func issueJWT(username string) (string, error) {
+func issueJWT(username string) (string, time.Time, error) {
+	exp := time.Now().AddDate(20, 0, 0)
+
 	claims := &jwt.MapClaims{
 		"user": username,
-		"exp":  time.Now().AddDate(20, 0, 0).Unix(),
+		"exp":  exp.Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -498,10 +502,10 @@ func issueJWT(username string) (string, error) {
 	jwtSecret := []byte(os.Getenv("JWT_SECRET"))
 	tokenString, err := token.SignedString(jwtSecret)
 	if err != nil {
-		return "", err
+		return "", exp, err
 	}
 
-	return tokenString, nil
+	return tokenString, exp, nil
 }
 
 func parseJWT(tokenString string) (*jwt.MapClaims, error) {
