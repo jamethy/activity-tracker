@@ -28,7 +28,8 @@ templ strComp(str string) {
 
 templ mainContent(content... templ.Component) {
 	<main>
-		<h1>Exercise Tracker</h1>
+		<h1>Activity Tracker</h1>
+		<div class="version">{ version }</div>
 		for _, c := range content {
             @c
 		}

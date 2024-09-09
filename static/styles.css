@@ -10,6 +10,15 @@ main {
     padding: 5em;
 }
 
+main > h1 {
+    margin-bottom: 0;
+}
+
+.version {
+    font-size: 0.75em;
+    margin-bottom: 1em;
+}
+
 .tracker-container {
     display: flex;
     flex-wrap: wrap;

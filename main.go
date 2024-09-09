@@ -620,7 +620,7 @@ func parseJWT(tokenString string) (*jwt.MapClaims, error) {
 	return nil, fmt.Errorf("invalid token")
 }
 
-var version string // filled in during goreleaser build
+var version = "unknown" // filled in during goreleaser build
 
 func setupLogger() *slog.Logger {
 	h := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
