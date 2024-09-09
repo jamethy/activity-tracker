@@ -1,17 +1,12 @@
 #!/bin/bash -xe
 
+# relies on stuff in .goreleaser.yaml
+
 VERSION=$1
-BUCKET=jamesianburns-random-data
-KEY=daily-tracker/daily-tracker-lambda-$VERSION.zip
+BUCKET=activity-tracker-lambda-artifacts
+KEY=releases/activity-tracker-lambda-$VERSION.zip
 
-git tag $VERSION
-
-export AWS_PROFILE=personal
-
-CGO_ENABLED=0 go build -o bootstrap -ldflags "-X main.version=$VERSION" .
-zip -r daily-tracker-lambda-$VERSION.zip bootstrap app_templ.txt
-aws s3 cp daily-tracker-lambda-$VERSION.zip s3://$BUCKET/$KEY
-
+# I named the lambda daily-tracker before renaming the repo and I'm too lazy to fix it
 aws lambda update-function-code \
   --function-name daily-tracker \
   --s3-bucket $BUCKET \

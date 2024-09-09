@@ -1,0 +1,28 @@
+# goreleaser documentation https://goreleaser.com/customization/
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  -
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+    binary: bootstrap # required by lambda
+
+changelog:
+  sort: asc
+
+archives:
+  - format: zip
+
+blobs:
+  -
+    provider: s3
+    bucket: activity-tracker-lambda-artifacts # deploy.sh depends on this
+    folder: releases

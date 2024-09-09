@@ -1,4 +1,4 @@
-module daily-tracker
+module github.com/jamethy/activity-tracker
 
 go 1.22.3
 

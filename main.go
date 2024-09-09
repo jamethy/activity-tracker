@@ -18,7 +18,6 @@ import (
 	"os"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -30,10 +29,6 @@ import (
 
 //go:embed static/*
 var staticFiles embed.FS
-
-// CGO_ENABLED=0 go build -o bootstrap .
-// zip -r daily-tracker-lambda-v1.0.1.zip bootstrap
-// aws --profile=personal s3 cp daily-tracker-lambda-v1.0.1.zip s3://jamesianburns-random-data/daily-tracker/daily-tracker-lambda-v1.0.1.zip
 
 // todo add click to delete modal
 // todo add light, moderate, and vigorous totals for past seven days
@@ -623,17 +618,6 @@ func parseJWT(tokenString string) (*jwt.MapClaims, error) {
 	}
 
 	return nil, fmt.Errorf("invalid token")
-}
-
-func testing(s time.Duration) string {
-	str := s.String()
-	if strings.HasSuffix(str, "0s") {
-		str = str[:len(str)-2]
-	}
-	if strings.HasSuffix(str, "0m") {
-		str = str[:len(str)-2]
-	}
-	return str
 }
 
 var version string // filled in during goreleaser build

@@ -10,6 +10,8 @@ import (
 	"net/http"
 )
 
+// MyProxy needed to extend the awslabs proxy because echo+templ+proxy has some disagreement on handling flush
+// https://github.com/labstack/echo/issues/2016
 type MyProxy struct {
 	*core.ProxyResponseWriterV2
 }
