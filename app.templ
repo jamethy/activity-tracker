@@ -1,0 +1,111 @@
+package main
+
+import (
+    "time"
+    "fmt"
+)
+
+templ page(body templ.Component) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<title>Title</title>
+			<script src="https://unpkg.com/htmx.org@2.0.0/dist/htmx.js" integrity="sha384-Xh+GLLi0SMFPwtHQjT72aPG19QvKB8grnyRbYBNIdHWc2NkCrz65jlU7YrzO6qRp" crossorigin="anonymous"></script>
+			<link rel="stylesheet" href="/styles.css"/>
+		</head>
+		<body id="body">
+			@body
+		</body>
+	</html>
+}
+
+templ strComp(str string) {
+	<span>{ str }</span>
+}
+
+templ mainContent(content templ.Component) {
+	<main>
+		@content
+	</main>
+}
+
+templ entryDisplay(e DayEntry) {
+    <div>{ e.Description }</div>
+    <div class={ effortClass(e) }></div>
+}
+
+func entryModalCreationVals(d DayLog) string {
+    return fmt.Sprintf(`{"date": "%s"}`, d.Date.Format(time.DateOnly))
+}
+
+//css effort(e DayEntry) {
+//    background-color: "lightgreen";
+//    height: "1em";
+//    width: { fmt.Sprintf("%fem", e.DurationHours()*2) };
+//}
+templ tracker(logs []DayLog) {
+	<section>
+		<h1>Exercise Tracker</h1>
+		<div class="tracker-container">
+			for _, d := range logs {
+				<div id={ dateToID(d.Date.Format(time.DateOnly)) } class="day">
+				    <div style="flex: 1" hx-get="/add-entry-modal" hx-vals={ entryModalCreationVals(d) } hx-target={ "#" + dateToID(d.Date.Format(time.DateOnly)) } hx-swap="beforeend">
+                        <div><strong>{ d.Date.Format("Monday") }</strong></div>
+                        <div><strong>{ d.Date.Format("Jan _2") }</strong></div>
+					</div>
+					if len(d.Entries) == 0 {
+						<div class="nothing">nothing</div>
+					}
+					for _, e := range d.Entries {
+					    @entryDisplay(e)
+					}
+				</div>
+			}
+		</div>
+	</section>
+}
+
+func dateToID(date string) string {
+	return "date-" + date
+}
+
+script closeModal() {
+     document.getElementById('modal').remove();
+}
+
+templ addLogModal(date string) {
+	<div id="modal">
+		<div class="modal-underlay" onClick={ closeModal() }></div>
+		<div class="modal-content">
+		    <form hx-post="/entries" hx-target="#modal" hx-swap="outerHTML">
+                <h1>Add Entry</h1>
+                <label for="date">Date:</label>
+                <input type="date" id="date" value={ date } name="date"/>
+                <br/>
+                <label for="duration">Duration:</label>
+                <input type="text" id="duration" name="duration"/>
+                <br/>
+                <label for="effort">Effort:</label>
+                <input type="range" id="effort" name="effort" min="0" max="1.0" step="0.05"/>
+                <br/>
+                <label for="description">Description:</label>
+                <input type="text" id="description" name="description"/>
+                <br/>
+                <br/>
+                <button type="submit">Submit</button>
+			</form>
+			<button onClick={ closeModal() }>Cancel</button>
+		</div>
+	</div>
+}
+
+templ loginForm() {
+	<form action="/login" method="POST">
+		<input name="username" type="text"/>
+		<input name="password" type="password"/>
+		<button type="submit">
+			Login
+		</button>
+	</form>
+}
