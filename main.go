@@ -30,20 +30,6 @@ import (
 //go:embed static/*
 var staticFiles embed.FS
 
-// todo add click to delete modal
-// todo add light, moderate, and vigorous totals for past seven days
-// todo add effort level color codes
-// todo add multiple users
-// todo factor in heart rates and targets for a week (1.25-2.5h a week)
-// my maximum heart rate: 206.9 – (0.67 x age) = 184BPM
-// my resting heart rate: 60ish
-// https://www.heart.org/en/healthy-living/fitness/fitness-basics/aha-recs-for-physical-activity-in-adults
-// - says get
-// 		- at least 2.5h/w of moderate-intensity aerobic activity (50-70% of maximum heart rate, 93-130BPM)
-//	 	- or 1.25h/w of vigorous aerobic activity (70-85% of maximum, 130-158)
-// - even light anything is better than sitting
-// - extra benefits after 5h
-
 type UserInfo struct {
 	Username         string
 	Password         string
@@ -635,3 +621,9 @@ func setupLogger() *slog.Logger {
 	))
 	return l
 }
+
+// todo add click to delete modal
+// todo add light, moderate, and vigorous totals for past seven days
+// todo add effort level color codes
+// todo add multiple users
+// todo factor in heart rates and targets for a week (1.25-2.5h a week)
