@@ -25,4 +25,4 @@ blobs:
   -
     provider: s3
     bucket: activity-tracker-lambda-artifacts # deploy.sh depends on this
-    folder: releases
+    directory: releases
