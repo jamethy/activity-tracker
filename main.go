@@ -24,12 +24,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 //go:embed static/*
 var staticFiles embed.FS
 
 // CGO_ENABLED=0 go build -o bootstrap .
+// zip -r daily-tracker-lambda-v1.0.1.zip bootstrap
+// aws --profile=personal s3 cp daily-tracker-lambda-v1.0.1.zip s3://jamesianburns-random-data/daily-tracker/daily-tracker-lambda-v1.0.1.zip
 
 // https://changelog.com/gotime/291
 // https://templ.guide/
@@ -66,10 +69,13 @@ func main() {
 				return next(c)
 			}
 			s, err := c.Cookie("session")
-			if err != nil || s.Value != "12345" {
-				return c.Redirect(http.StatusFound, "/login")
+			if err == nil {
+				_, err = parseJWT(s.Value)
+				if err == nil {
+					return next(c)
+				}
 			}
-			return next(c)
+			return c.Redirect(http.StatusFound, "/login")
 		}
 	})
 
@@ -161,9 +167,13 @@ func main() {
 			return c.NoContent(http.StatusUnauthorized)
 		}
 		// https://echo.labstack.com/docs/cookies
+		value, err := issueJWT(params.Username)
+		if err != nil {
+			return err
+		}
 		c.SetCookie(&http.Cookie{
 			Name:  "session",
-			Value: "12345",
+			Value: value,
 		})
 		return c.Redirect(http.StatusFound, "/")
 	})
@@ -499,4 +509,41 @@ func safeClose(c io.Closer, name string) {
 	if err != nil {
 		slog.Error("failed to close closer", "name", name)
 	}
+}
+
+func issueJWT(username string) (string, error) {
+	claims := &jwt.MapClaims{
+		"user": username,
+		"exp":  time.Now().AddDate(20, 0, 0).Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	jwtSecret := []byte(os.Getenv("JWT_SECRET"))
+	tokenString, err := token.SignedString(jwtSecret)
+	if err != nil {
+		return "", err
+	}
+
+	return tokenString, nil
+}
+
+func parseJWT(tokenString string) (*jwt.MapClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &jwt.MapClaims{}, func(token *jwt.Token) (any, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		jwtSecret := []byte(os.Getenv("JWT_SECRET"))
+		return jwtSecret, nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if claims, ok := token.Claims.(*jwt.MapClaims); ok && token.Valid {
+		return claims, nil
+	}
+
+	return nil, fmt.Errorf("invalid token")
 }
