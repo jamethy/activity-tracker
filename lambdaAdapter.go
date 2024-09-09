@@ -10,6 +10,13 @@ import (
 	"net/http"
 )
 
+type MyProxy struct {
+	*core.ProxyResponseWriterV2
+}
+
+func (m *MyProxy) Flush() {
+}
+
 // LambdaEchoProxy is a modified copy of aws-lambda-go-api-proxy that lets me grab the request ID
 // https://github.com/awslabs/aws-lambda-go-api-proxy/blob/581201ab7e19039735cc5b1cbef2e567ca2ed008/echo/adapterv2.go#L39
 // This plus requestIDMiddleware gets the request ID in all the logs
@@ -28,7 +35,7 @@ func LambdaEchoProxy(e *echo.Echo) func(ctx context.Context, req events.APIGatew
 		// add in request id header
 		httpReq.Header.Add(echo.HeaderXRequestID, req.RequestContext.RequestID)
 
-		respWriter := core.NewProxyResponseWriterV2()
+		respWriter := MyProxy{core.NewProxyResponseWriterV2()}
 		adapter.Echo.ServeHTTP(http.ResponseWriter(respWriter), httpReq)
 
 		proxyResponse, err := respWriter.GetProxyResponse()
