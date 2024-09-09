@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/a-h/templ"
 	"github.com/golang-jwt/jwt"
+	"github.com/labstack/echo/v4"
 	"io"
 	"io/fs"
 	"log/slog"

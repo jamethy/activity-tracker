@@ -10,6 +10,7 @@ templ page(body templ.Component) {
 	<html lang="en">
 		<head>
 			<meta charset="UTF-8"/>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
 			<title>Tracker</title>
 			<script src="https://unpkg.com/htmx.org@2.0.0/dist/htmx.js" integrity="sha384-Xh+GLLi0SMFPwtHQjT72aPG19QvKB8grnyRbYBNIdHWc2NkCrz65jlU7YrzO6qRp" crossorigin="anonymous"></script>
 			<link rel="stylesheet" href="/styles.css"/>
@@ -38,7 +39,7 @@ css effortClass(e DayEntry) {
 }
 
 templ entryDisplay(e DayEntry) {
-    <div class={ loading(50) }>{ e.Description }</div>
+    <div>{ e.Description }</div>
     <div class={ effortClass(e) }></div>
 }
 
@@ -82,22 +83,28 @@ templ addLogModal(date string) {
 		<div class="modal-content">
 		    <form hx-post="/entries" hx-target="#modal" hx-swap="outerHTML">
                 <h1>Add Entry</h1>
-                <label for="date">Date:</label>
-                <input type="date" id="date" value={ date } name="date"/>
-                <br/>
-                <label for="duration">Duration:</label>
-                <input type="text" id="duration" name="duration"/>
-                <br/>
-                <label for="effort">Effort:</label>
-                <input type="range" id="effort" name="effort" min="0" max="1.0" step="0.05"/>
-                <br/>
-                <label for="description">Description:</label>
-                <input type="text" id="description" name="description"/>
-                <br/>
-                <br/>
-                <button type="submit">Submit</button>
+                <div class="form-item">
+                    <label for="date">Date:</label>
+                    <input type="date" id="date" value={ date } name="date"/>
+                </div>
+                <div class="form-item">
+                    <label for="duration">Duration:</label>
+                    <input type="text" id="duration" name="duration" style="width:8.55em"/>
+                </div>
+                <div class="form-item">
+                    <label for="effort">Effort:</label>
+                    <input type="range" id="effort" name="effort" min="0" max="1.0" step="0.05"  style="width:9em"/>
+                </div>
+                <div class="form-item">
+                    <label for="description">Description:</label>
+                    <input type="text" id="description" name="description" style="width:8.55em"/>
+                </div>
+                <div class="form-item">
+                    <button onClick={ closeModal() }>Cancel</button>
+                    <div style="flex:1"></div>
+                    <button type="submit">Submit</button>
+                </div>
 			</form>
-			<button onClick={ closeModal() }>Cancel</button>
 		</div>
 	</div>
 }
