@@ -70,6 +70,8 @@ func main() {
 	runLocally := flag.Bool("runLocally", false, "run locally instead of lambda")
 	flag.Parse()
 
+	slog.SetDefault(setupLogger())
+
 	slog.Info("start up config",
 		"localFile", *useLocalFile,
 		"runLocally", *runLocally,
@@ -632,4 +634,20 @@ func testing(s time.Duration) string {
 		str = str[:len(str)-2]
 	}
 	return str
+}
+
+var version string // filled in during goreleaser build
+
+func setupLogger() *slog.Logger {
+	h := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		AddSource:   false,
+		Level:       slog.LevelDebug,
+		ReplaceAttr: nil,
+	})
+	l := slog.New(h)
+	l = l.With("app", slog.GroupValue(
+		slog.String("name", "tracker"),
+		slog.String("version", version),
+	))
+	return l
 }
