@@ -45,7 +45,6 @@ const minimumModerateIntensityHoursPerWeek = 2.5
 // https://templ.guide/
 // https://github.com/a-h/templ
 // https://htmx.org/
-// https://rtslabs.atlassian.net/wiki/spaces/RA/pages/2571141121/Create+a+Web+App
 func main() {
 	useLocalFile := flag.Bool("localFile", false, "use local instead of s3")
 	runLocally := flag.Bool("runLocally", false, "run locally instead of lambda")
