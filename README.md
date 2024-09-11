@@ -4,6 +4,11 @@ Something I can use to encourage me to not be so sedentary.
 
 ![Test Status](https://github.com/jamethy/activity-tracker/actions/workflows/go-build-and-test.yml/badge.svg)
 
+Here's a preview of my stunning design:
+![Screenshots](https://github.com/user-attachments/assets/2e34648f-1be8-4d78-a86c-a2e0ad40be88)
+
+Yeah... I've even got car cleaning on there and there's still a bunch of `nothing` shaming me. I've got to move more.
+
 This is all based on something I heard one time:
 
 > You should do at least 30 minutes of moderate exercise three times a week
@@ -25,7 +30,7 @@ Starting with some business requirements:
     - extra benefits after 5h
 
 ## Infrastructure
-I can be extremely cheap, and I don't like DynamoDB, so what's the next easiest thing? Store it in a csv in S3!
+I can be extremely cheap, and I don't like DynamoDB, so what's the next easiest thing? Store everything in S3!
 
 ![infrastructure.png](docs/infrastructure.png)
 
