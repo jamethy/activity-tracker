@@ -1,23 +1,30 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"embed"
 	"encoding/csv"
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/a-h/templ"
 	"github.com/golang-jwt/jwt"
 	"github.com/labstack/echo/v4"
+	"golang.org/x/crypto/bcrypt"
 	"io"
 	"io/fs"
+	"log"
 	"log/slog"
 	"math"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -41,13 +48,19 @@ const moderateFloorPercentage = 0.5
 const highFloorPercentage = 0.7
 const minimumModerateIntensityHoursPerWeek = 2.5
 
+const jwtClaimsKey = "jwt-claims"
+const userInfoFileName = "user-info.json"
+const userDataFileName = "activity-tracker-data.csv"
+
 // https://changelog.com/gotime/291
 // https://templ.guide/
 // https://github.com/a-h/templ
 // https://htmx.org/
 func main() {
-	useLocalFile := flag.Bool("localFile", false, "use local instead of s3")
-	runLocally := flag.Bool("runLocally", false, "run locally instead of lambda")
+	useLocalFile := flag.Bool("local-file", false, "use local instead of s3")
+	runLocally := flag.Bool("run-locally", false, "run locally instead of lambda")
+	initUser := flag.Bool("init-user", false, "run the initialize user command")
+
 	flag.Parse()
 
 	slog.SetDefault(setupLogger())
@@ -57,21 +70,50 @@ func main() {
 		"runLocally", *runLocally,
 	)
 
-	user := UserInfo{
-		Username:         os.Getenv("USERNAME"),
-		Password:         os.Getenv("PASSWORD"),
-		RestingHeartrate: 60,
-		DateOfBirth:      time.Date(1989, 12, 18, 0, 0, 0, 0, time.UTC),
-	}
-
-	getFileHandler := func(ctx context.Context) (io.ReadWriteCloser, error) {
+	getFileHandler := func(ctx context.Context, username, fileName string) (io.ReadWriteCloser, error) {
 		if *useLocalFile {
-			return &LocalCSVData{
+			return &LocalFileData{
 				ctx:      ctx,
-				fileName: "daily-tracker-data.csv",
+				fileName: filepath.Join("localdata", username, fileName),
 			}, nil
 		}
-		return newS3CSVData(ctx, "jamesianburns-random-data", "daily-tracker/data.csv")
+
+		// else s3
+		cfg, err := config.LoadDefaultConfig(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load aws config: %w", err)
+		}
+		return &S3FileData{
+			ctx:      ctx,
+			s3Client: s3.NewFromConfig(cfg),
+			bucket:   "activity-tracker-lambda-artifacts",
+			key:      fmt.Sprintf("data/%s/%s", username, fileName),
+		}, nil
+	}
+
+	if *initUser {
+		userInfo, _ := userInfoFromIO(os.Stdin, os.Stdout)
+		f, err := getFileHandler(context.Background(), userInfo.Username, userInfoFileName)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer safeClose(f, "init-user-info")
+		err = json.NewEncoder(f).Encode(userInfo)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		f, err = getFileHandler(context.Background(), userInfo.Username, userDataFileName)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer safeClose(f, "init-user-data")
+
+		// this creates the file if it doesn't exist, but doesn't erase any data
+		b, _ := io.ReadAll(f)
+		_, _ = f.Write(b)
+
+		return
 	}
 
 	e := echo.New()
@@ -85,18 +127,70 @@ func main() {
 			}
 			s, err := c.Cookie("session")
 			if err == nil {
-				_, err = parseJWT(s.Value)
-				if err == nil {
+				claims, jwtErr := parseJWT(s.Value)
+				if jwtErr == nil {
+					c.Set(jwtClaimsKey, claims)
 					return next(c)
 				}
+				err = jwtErr
 			}
 			slog.Info("301 for user", "err", err.Error())
 			return c.Redirect(http.StatusFound, "/login")
 		}
 	})
 
+	e.GET("/login", func(c echo.Context) error {
+		return render(c, page(loginForm()))
+	})
+
+	e.POST("/login", func(c echo.Context) error {
+		var params struct {
+			Username string `form:"username"`
+			Password string `form:"password"`
+		}
+		// todo add validation
+		if err := c.Bind(&params); err != nil {
+			return err
+		}
+		infoFile, err := getFileHandler(c.Request().Context(), params.Username, userInfoFileName)
+		if err != nil {
+			slog.Warn("failed getting user info", "user", params.Username, "err", err)
+			// assume it doesn't exist  for now
+			return c.NoContent(http.StatusUnauthorized)
+		}
+		defer safeClose(infoFile, "login")
+		var userInfo UserInfo
+		err = json.NewDecoder(infoFile).Decode(&userInfo)
+		if err != nil {
+			slog.Warn("failed parsing user info", "user", params.Username, "err", err)
+			return c.NoContent(http.StatusInternalServerError)
+		}
+
+		err = bcrypt.CompareHashAndPassword([]byte(userInfo.Password), []byte(params.Password))
+		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
+			return c.NoContent(http.StatusUnauthorized)
+		}
+		if err != nil {
+			slog.Warn("failed comparing password", "user", params.Username, "err", err)
+			return c.NoContent(http.StatusUnauthorized)
+		}
+
+		// https://echo.labstack.com/docs/cookies
+		value, exp, err := issueJWT(userInfo)
+		if err != nil {
+			return err
+		}
+		c.SetCookie(&http.Cookie{
+			Name:    "session",
+			Value:   value,
+			Expires: exp,
+		})
+		return c.Redirect(http.StatusFound, "/")
+	})
+
 	e.GET("", func(c echo.Context) error {
-		f, err := getFileHandler(c.Request().Context())
+		claims := c.Get(jwtClaimsKey).(JWTClaims)
+		f, err := getFileHandler(c.Request().Context(), claims.User, userDataFileName)
 		if err != nil {
 			return err
 		}
@@ -108,7 +202,7 @@ func main() {
 		}
 
 		days = fillInDates(days, time.Now())
-		summary := calcSummary(user, days[:7])
+		summary := calcSummary(claims, days[:7])
 
 		return render(c, page(mainContent(summarySection(summary), tracker(days, summary))))
 	})
@@ -126,7 +220,8 @@ func main() {
 			return fmt.Errorf("failed to marshal body")
 		}
 
-		f, err := getFileHandler(c.Request().Context())
+		claims := c.Get(jwtClaimsKey).(JWTClaims)
+		f, err := getFileHandler(c.Request().Context(), claims.User, userDataFileName)
 		if err != nil {
 			return err
 		}
@@ -157,10 +252,6 @@ func main() {
 		return render(c, entryDisplay(entry))
 	})
 
-	e.GET("/login", func(c echo.Context) error {
-		return render(c, page(loginForm()))
-	})
-
 	e.GET("/add-entry-modal", func(c echo.Context) error {
 		var params struct {
 			Date string `query:"date"`
@@ -170,30 +261,6 @@ func main() {
 			return fmt.Errorf("failed to marshal body")
 		}
 		return render(c, addLogModal(params.Date))
-	})
-
-	e.POST("/login", func(c echo.Context) error {
-		var params struct {
-			Username string `form:"username"`
-			Password string `form:"password"`
-		}
-		if err := c.Bind(&params); err != nil {
-			return err
-		}
-		if params.Username != user.Username || params.Password != user.Password {
-			return c.NoContent(http.StatusUnauthorized)
-		}
-		// https://echo.labstack.com/docs/cookies
-		value, exp, err := issueJWT(params.Username)
-		if err != nil {
-			return err
-		}
-		c.SetCookie(&http.Cookie{
-			Name:    "session",
-			Value:   value,
-			Expires: exp,
-		})
-		return c.Redirect(http.StatusFound, "/")
 	})
 
 	e.POST("/logout", func(c echo.Context) error {
@@ -237,13 +304,13 @@ type Summary struct {
 	BonusLevel                 float64 // 5h equiv, 200%
 }
 
-func calcSummary(user UserInfo, days []DayLog) Summary {
+func calcSummary(claims JWTClaims, days []DayLog) Summary {
 	// https://www.heart.org/en/healthy-living/fitness/fitness-basics/aha-recs-for-physical-activity-in-adults
-	age := time.Now().Sub(user.DateOfBirth).Hours() / (24 * 365)
+	age := time.Now().Sub(claims.DateOfBirth).Hours() / (24 * 365)
 	maximumHeartRate := 206.09 - 0.67*age
 
 	s := Summary{
-		RestingHeartRate:           user.RestingHeartrate,
+		RestingHeartRate:           claims.RestingHeartrate,
 		ModerateIntensityHeartRate: maximumHeartRate * moderateFloorPercentage,
 		HighIntensityHeartRate:     maximumHeartRate * highFloorPercentage,
 	}
@@ -319,16 +386,22 @@ func effortColor(e DayEntry) string {
 	return color
 }
 
-type LocalCSVData struct {
+type LocalFileData struct {
 	ctx      context.Context
 	fileName string
 	writer   io.WriteCloser
 	reader   io.ReadCloser
 }
 
-func (l *LocalCSVData) Read(p []byte) (n int, err error) {
+func (l *LocalFileData) Read(p []byte) (n int, err error) {
 	if l.reader == nil {
-		slog.Info("opening local csv file")
+		slog.Info("opening local file")
+
+		err = os.MkdirAll(filepath.Dir(l.fileName), 0755)
+		if err != nil {
+			return 0, fmt.Errorf("failed to mkdir -p: %w", err)
+		}
+
 		f, err := os.Open(l.fileName)
 		if err != nil {
 			return 0, fmt.Errorf("failed to open file for reading: %w", err)
@@ -338,9 +411,15 @@ func (l *LocalCSVData) Read(p []byte) (n int, err error) {
 	return l.reader.Read(p)
 }
 
-func (l *LocalCSVData) Write(p []byte) (n int, err error) {
+func (l *LocalFileData) Write(p []byte) (n int, err error) {
 	if l.writer == nil {
-		slog.Info("writing to local csv file")
+		slog.Info("writing to local file")
+
+		err = os.MkdirAll(filepath.Dir(l.fileName), 0755)
+		if err != nil {
+			return 0, fmt.Errorf("failed to mkdir -p: %w", err)
+		}
+
 		f, err := os.Create(l.fileName)
 		if err != nil {
 			return 0, fmt.Errorf("failed to open file for writing: %w", err)
@@ -350,7 +429,7 @@ func (l *LocalCSVData) Write(p []byte) (n int, err error) {
 	return l.writer.Write(p)
 }
 
-func (l *LocalCSVData) Close() error {
+func (l *LocalFileData) Close() error {
 	if l.reader != nil {
 		return l.reader.Close()
 	}
@@ -360,7 +439,7 @@ func (l *LocalCSVData) Close() error {
 	return nil
 }
 
-type S3CSVData struct {
+type S3FileData struct {
 	ctx      context.Context
 	s3Client *s3.Client
 	bucket   string
@@ -370,7 +449,7 @@ type S3CSVData struct {
 	reader io.ReadCloser
 }
 
-func (s *S3CSVData) Read(p []byte) (n int, err error) {
+func (s *S3FileData) Read(p []byte) (n int, err error) {
 	if s.reader == nil {
 		result, err := s.s3Client.GetObject(s.ctx, &s3.GetObjectInput{
 			Bucket: aws.String(s.bucket),
@@ -384,14 +463,14 @@ func (s *S3CSVData) Read(p []byte) (n int, err error) {
 	return s.reader.Read(p)
 }
 
-func (s *S3CSVData) Write(p []byte) (n int, err error) {
+func (s *S3FileData) Write(p []byte) (n int, err error) {
 	if s.writer == nil {
 		s.writer = &bytes.Buffer{}
 	}
 	return s.writer.Write(p)
 }
 
-func (s *S3CSVData) Close() error {
+func (s *S3FileData) Close() error {
 	if s.writer != nil {
 		_, err := s.s3Client.PutObject(s.ctx, &s3.PutObjectInput{
 			Bucket: aws.String(s.bucket),
@@ -406,22 +485,11 @@ func (s *S3CSVData) Close() error {
 	if s.reader != nil {
 		err := s.reader.Close()
 		s.reader = nil
-		return fmt.Errorf("failed to closer a reader: %w", err)
+		if err != nil {
+			return fmt.Errorf("failed to closer a reader: %w", err)
+		}
 	}
 	return nil
-}
-
-func newS3CSVData(ctx context.Context, bucket, key string) (*S3CSVData, error) {
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load aws config: %w", err)
-	}
-	return &S3CSVData{
-		ctx:      ctx,
-		s3Client: s3.NewFromConfig(cfg),
-		bucket:   bucket,
-		key:      key,
-	}, nil
 }
 
 func toCSVRecords(logs []DayLog) [][]string {
@@ -437,16 +505,6 @@ func toCSVRecords(logs []DayLog) [][]string {
 		}
 	}
 	return records
-}
-
-func writeCSV(logs []DayLog, w io.Writer) error {
-	records := toCSVRecords(logs)
-
-	err := csv.NewWriter(w).WriteAll(records)
-	if err != nil {
-		return fmt.Errorf("failed to write csv: %w", err)
-	}
-	return nil
 }
 
 func addCSVEntries(logs []DayLog, c io.ReadWriteCloser) error {
@@ -562,16 +620,35 @@ func fillInDates(dayLogs []DayLog, upTo time.Time) []DayLog {
 func safeClose(c io.Closer, name string) {
 	err := c.Close()
 	if err != nil {
-		slog.Error("failed to close closer", "name", name)
+		slog.Error("failed to close closer", "name", name, "err", err)
 	}
 }
 
-func issueJWT(username string) (string, time.Time, error) {
+type JWTClaims struct {
+	User             string    `json:"user"`
+	Expiration       int64     `json:"exp"`
+	RestingHeartrate float64   `json:"heart"`
+	DateOfBirth      time.Time `json:"dob"`
+}
+
+func (c JWTClaims) Valid() error {
+	if c.User == "" {
+		return errors.New("invalid user")
+	}
+	if c.Expiration == 0 {
+		return errors.New("invalid exp")
+	}
+	return nil
+}
+
+func issueJWT(userInfo UserInfo) (string, time.Time, error) {
 	exp := time.Now().AddDate(20, 0, 0)
 
-	claims := &jwt.MapClaims{
-		"user": username,
-		"exp":  exp.Unix(),
+	claims := JWTClaims{
+		User:             userInfo.Username,
+		Expiration:       exp.Unix(),
+		RestingHeartrate: userInfo.RestingHeartrate,
+		DateOfBirth:      userInfo.DateOfBirth,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -585,8 +662,8 @@ func issueJWT(username string) (string, time.Time, error) {
 	return tokenString, exp, nil
 }
 
-func parseJWT(tokenString string) (*jwt.MapClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &jwt.MapClaims{}, func(token *jwt.Token) (any, error) {
+func parseJWT(tokenString string) (JWTClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &JWTClaims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
@@ -595,14 +672,45 @@ func parseJWT(tokenString string) (*jwt.MapClaims, error) {
 	})
 
 	if err != nil {
-		return nil, err
+		return JWTClaims{}, err
 	}
 
-	if claims, ok := token.Claims.(*jwt.MapClaims); ok && token.Valid {
-		return claims, nil
+	if claims, ok := token.Claims.(*JWTClaims); ok && token.Valid {
+		return *claims, nil
 	}
 
-	return nil, fmt.Errorf("invalid token")
+	return JWTClaims{}, fmt.Errorf("invalid token")
+}
+
+func userInfoFromIO(r io.Reader, w io.Writer) (UserInfo, error) {
+	u := UserInfo{}
+
+	buffedReader := bufio.NewReader(r)
+
+	// todo input validation and error handling
+	_, _ = w.Write([]byte("username: "))
+	u.Username, _ = buffedReader.ReadString('\n')
+	u.Username = strings.TrimSpace(u.Username)
+
+	_, _ = w.Write([]byte("password: "))
+	password, _ := buffedReader.ReadString('\n')
+	password = strings.TrimSpace(password)
+	passwordBytes, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	u.Password = string(passwordBytes)
+
+	_, _ = w.Write([]byte("resting heart rate: "))
+	heartRateStr, _ := buffedReader.ReadString('\n')
+	heartRateStr = strings.TrimSpace(heartRateStr)
+	u.RestingHeartrate, _ = strconv.ParseFloat(heartRateStr, 10)
+
+	for u.DateOfBirth.IsZero() {
+		_, _ = w.Write([]byte(fmt.Sprintf("date of birth (%s): ", time.DateOnly)))
+		dob, _ := buffedReader.ReadString('\n')
+		dob = strings.TrimSpace(dob)
+		u.DateOfBirth, _ = time.Parse(time.DateOnly, dob)
+	}
+
+	return u, nil
 }
 
 var version = "unknown" // filled in during goreleaser build
@@ -624,5 +732,4 @@ func setupLogger() *slog.Logger {
 // todo add click to delete modal
 // todo add light, moderate, and vigorous totals for past seven days
 // todo add effort level color codes
-// todo add multiple users
 // todo factor in heart rates and targets for a week (1.25-2.5h a week)

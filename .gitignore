@@ -5,3 +5,5 @@ bootstrap
 *.iml
 dist/
 app_templ.txt
+*.json
+localdata/
