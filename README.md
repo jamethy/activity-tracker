@@ -4,7 +4,7 @@ Something I can use to encourage me to not be so sedentary.
 
 ![Test Status](https://github.com/jamethy/activity-tracker/actions/workflows/go-build-and-test.yml/badge.svg)
 
-Here's a preview of my stunning design:
+Here's a preview of my _stunning_ design:
 ![Screenshots](https://github.com/user-attachments/assets/2e34648f-1be8-4d78-a86c-a2e0ad40be88)
 
 Yeah... I've even got car cleaning on there and there's still a bunch of `nothing` shaming me. I've got to move more.
@@ -35,4 +35,6 @@ I can be extremely cheap, and I don't like DynamoDB, so what's the next easiest 
 ![infrastructure.png](docs/infrastructure.png)
 
 Insanity? Or genius?
+
+Yeah... I should just buy a Garmin.
 
